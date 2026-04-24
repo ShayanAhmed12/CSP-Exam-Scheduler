@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg:            #060b18;
+  --surface:       #0f172b;
+  --surface-2:     #17233d;
+  --border:        #2a3d63;
+  --border-strong: #3f5c91;
+  --text:          #eaf1ff;
+  --text-2:        #8da4cf;
+  --accent:        #2fc7ff;
+  --accent-light:  #123044;
+  --success:       #34d399;
+  --success-light: #0f2e2c;
+  --danger:        #ff7a85;
+  --danger-light:  #3a1d31;
+  --try:           #f5bf4e;
+  --try-light:     #3a3018;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(1200px 620px at -15% -10%, #193765 0%, transparent 60%),
+    radial-gradient(800px 520px at 115% 0%, #154461 0%, transparent 58%),
+    linear-gradient(180deg, #060b18 0%, #060f22 100%);
+  color: var(--text);
+  font-family: 'Space Grotesk', 'Manrope', sans-serif;
+}
+
+::-webkit-scrollbar       { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: #0a1327; }
+::-webkit-scrollbar-thumb { background: #2e4570; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+/* ── Timetable cell animations ───────────────────────── */
+@keyframes cellAssign {
+  0%   { transform: scale(0.88); background-color: var(--success-light); box-shadow: 0 0 0 3px #34d39944; }
+  60%  { transform: scale(1.03); }
+  100% { transform: scale(1);    }
+}
+@keyframes cellBacktrack {
+  0%   { background-color: var(--danger-light); box-shadow: 0 0 0 3px #ff7a8544; }
+  100% { background-color: transparent; opacity: 0; }
+}
+@keyframes cellTrying {
+  0%, 100% { box-shadow: 0 0 0 2px var(--try); opacity: 0.7; }
+  50%       { box-shadow: 0 0 0 4px var(--try); opacity: 1;   }
+}
+
+.cell-assign    { animation: cellAssign    0.45s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+.cell-backtrack { animation: cellBacktrack 0.35s ease-out forwards; }
+.cell-trying    { animation: cellTrying    0.8s ease-in-out infinite; }
+
+/* ── Section label underline ─────────────────────────── */
+.section-label {
+  font-family: 'Bitter', 'Merriweather', serif;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+@media print {
+  header, aside, .no-print { display: none !important; }
+  body { background: white !important; color: black !important; }
+  table { border-collapse: collapse !important; }
+  th, td { border: 1px solid #ccc !important; padding: 6pt !important; color: black !important; }
+  @page { size: A4 landscape; margin: 15mm; }
+}

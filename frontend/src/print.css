@@ -1,0 +1,104 @@
+/* ============================================================
+   print.css — loaded in main.jsx, only activates on print/PDF
+   ============================================================ */
+
+@media print {
+
+  /* Reset dark theme to white page */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html, body, #root {
+    background: #ffffff !important;
+    color: #111111 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Hide everything except the timetable panel */
+  header,
+  footer,
+  [data-noPrint],
+  .lg\:flex > *:first-child,   /* Input panel */
+  .lg\:flex > *:nth-child(2)   /* Visualizer  */
+  {
+    display: none !important;
+  }
+
+  /* Make the timetable panel fill the page */
+  .lg\:flex > *:last-child {
+    display: block !important;
+    width: 100% !important;
+    overflow: visible !important;
+    border: none !important;
+  }
+
+  /* Page setup */
+  @page {
+    size: A4 landscape;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+
+  /* Timetable heading */
+  .print-title {
+    display: block !important;
+    font-size: 18pt;
+    font-weight: bold;
+    margin-bottom: 6pt;
+    color: #111 !important;
+  }
+
+  .print-subtitle {
+    display: block !important;
+    font-size: 10pt;
+    color: #555 !important;
+    margin-bottom: 14pt;
+  }
+
+  /* Force the table to render with borders in print */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 9pt !important;
+    font-family: 'Courier New', monospace !important;
+  }
+
+  th, td {
+    border: 1px solid #cccccc !important;
+    padding: 6pt 8pt !important;
+    color: #111 !important;
+    background: #ffffff !important;
+    vertical-align: top !important;
+  }
+
+  thead th {
+    background: #f0f0f0 !important;
+    font-weight: bold !important;
+    text-align: center !important;
+  }
+
+  /* Exam cell color strips — print in greyscale-friendly tones */
+  .exam-cell {
+    border-left: 3pt solid #333 !important;
+    padding-left: 5pt !important;
+    background: #f8f8f8 !important;
+    margin-bottom: 2pt;
+  }
+
+  /* Hide domain bars, stats panels, controls */
+  .no-print,
+  [class*="Visualizer"],
+  [class*="controls"],
+  button {
+    display: none !important;
+  }
+
+  /* Performance comparison — show only in condensed form */
+  .perf-section {
+    font-size: 8pt !important;
+    color: #555 !important;
+    margin-top: 10pt;
+  }
+}
