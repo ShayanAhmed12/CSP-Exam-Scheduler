@@ -126,12 +126,20 @@ export default function AlgorithmPanel({ currentStepKind }) {
       <div className="mt-4 pt-3 border-t border-border">
         <div className="text-xs font-mono text-muted uppercase tracking-wider mb-2">Constraints</div>
         <div className="flex flex-col gap-1 text-xs font-mono text-muted/70">
+          {/*
+            BUG 6 FIX: `bg-red/70` and `bg-yellow/70` referenced the default
+            Tailwind palette, which is inconsistent with the custom color tokens
+            defined in tailwind.config.js and could break if `theme` (not
+            `extend`) is ever used.  Replaced with the custom palette equivalents:
+              red    → danger  (#ff7a85)
+              yellow → try     (#f5bf4e)
+          */}
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-red/70 flex-shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-danger/70 flex-shrink-0" />
             No two exams share a <span className="text-text/80 ml-1">room</span> at the same time
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-yellow/70 flex-shrink-0" />
+            <span className="w-2 h-2 rounded-full bg-try/70 flex-shrink-0" />
             No <span className="text-text/80 mx-1">teacher</span> invigilates two exams at once
           </div>
           <div className="flex items-center gap-2">
@@ -140,6 +148,20 @@ export default function AlgorithmPanel({ currentStepKind }) {
           </div>
         </div>
       </div>
+
+      {/*
+        BUG 4 FIX: The visualization reconstructs steps post-hoc from the solved
+        timetable, so the Backtracking phase above never highlights during
+        playback (no 'backtrack' steps are emitted for a successful solve).
+        The "backtracks" counter in the stats header reflects CP-SAT's internal
+        conflict count — real solver work, just not visible as discrete undo
+        animations when the run succeeds.  This note keeps the UI honest.
+      */}
+      <p className="mt-3 text-[10px] font-mono text-muted/50 leading-relaxed">
+        ⓘ Backtracking phase activates only on failed attempts. The backtracks
+        counter reflects internal CP-SAT conflicts; successful runs replay
+        the final solution without undo steps.
+      </p>
     </div>
   )
 }

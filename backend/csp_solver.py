@@ -430,7 +430,6 @@ def _validate_input(data: dict) -> list[str]:
         errors.append("min_gap must be a non-negative integer.")
 
     seen_courses = set()
-    max_students_in_exam = 0
 
     if isinstance(exams_raw, list):
         for idx, exam in enumerate(exams_raw, start=1):
@@ -457,11 +456,7 @@ def _validate_input(data: dict) -> list[str]:
                 else:
                     seen_courses.add(normalized)
 
-            unique_students = {str(s).strip() for s in students if str(s).strip()}
-            max_students_in_exam = max(max_students_in_exam, len(unique_students))
-
     room_names = set()
-    max_room_capacity = 0
     if isinstance(rooms_raw, list):
         for idx, room in enumerate(rooms_raw, start=1):
             if not isinstance(room, dict):
@@ -487,8 +482,6 @@ def _validate_input(data: dict) -> list[str]:
                 else:
                     room_names.add(lowered)
 
-            max_room_capacity = max(max_room_capacity, capacity)
-
     slot_names = set()
     if isinstance(slots_raw, list):
         for idx, slot in enumerate(slots_raw, start=1):
@@ -509,8 +502,19 @@ def _validate_input(data: dict) -> list[str]:
             else:
                 slot_names.add(key)
 
-    if max_students_in_exam > 0 and max_room_capacity > 0 and max_students_in_exam > max_room_capacity:
-        errors.append("At least one exam has more students than the largest room capacity.")
+    # BUG 2 FIX: The original code raised a ValueError here when any exam's
+    # student count exceeded the largest room capacity.  That caused app.py to
+    # return HTTP 400 with a plain error string, bypassing the solver's graceful
+    # INFEASIBLE path (which returns solution:null + a guidance array).
+    #
+    # The solver already handles capacity infeasibility correctly: if no room can
+    # hold an exam, feasible_by_exam[ei] is empty and solve() returns INFEASIBLE
+    # with a descriptive fail step and the guidance list in build_and_solve().
+    # Removing the check here lets that path run as intended.
+    #
+    # The frontend's InputPanel.handleSubmit still has its own client-side check
+    # that shows a localError before submission, so normal users still get
+    # immediate feedback without a round-trip.
 
     return errors
 

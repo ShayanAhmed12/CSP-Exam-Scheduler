@@ -207,12 +207,38 @@ function StatsRow({ assignments, backtracks, prunes, stepNum, total }) {
 
 function ComparisonPanel({ comparison }) {
   if (!comparison) return null
-
+ 
   const plain     = comparison.plain_backtracking || {}
   const optimized = comparison.optimized || {}
   const reduction = comparison.reduction_percent
   const ratio     = comparison.improvement_ratio
-
+ 
+  /*
+   * BUG 5 FIX: `reduction_percent` can be negative when the optimized solver
+   * uses *more* operations than the baseline (common on trivially small inputs
+   * where MRV/LCV overhead outweighs the savings).  The original code rendered
+   * the raw number, e.g. "-12.5%", with the same green `text-success` styling
+   * used for improvements — confusing users into thinking a negative number was
+   * still good.
+   *
+   * Fix: branch on sign.
+   *   positive → green "X% reduction"
+   *   zero     → muted "no change"
+   *   negative → amber "X% slower" (using the `try` palette color)
+   */
+  const reductionDisplay = (() => {
+    if (reduction == null) return { label: '—', className: 'text-muted' }
+    if (reduction > 0)  return { label: `${reduction}% reduction`,  className: 'text-success font-semibold' }
+    if (reduction === 0) return { label: 'no change',               className: 'text-muted font-semibold' }
+    return { label: `${Math.abs(reduction)}% slower`,               className: 'text-try font-semibold' }
+  })()
+ 
+  const ratioDisplay = (() => {
+    if (ratio == null) return { label: '—', className: 'text-muted' }
+    if (ratio >= 1)  return { label: `${ratio}x faster`, className: 'text-success font-semibold' }
+    return { label: `${ratio}x (slower)`,                className: 'text-try font-semibold' }
+  })()
+ 
   return (
     <div className="bg-surface border border-border rounded-xl px-4 py-3">
       <div className="text-[10px] font-mono uppercase tracking-wider text-muted mb-3">Performance Comparison</div>
@@ -233,10 +259,10 @@ function ComparisonPanel({ comparison }) {
       </div>
       <div className="mt-3 flex flex-wrap gap-4 text-xs font-mono">
         <span className="text-muted">
-          Reduction: <span className="text-success font-semibold">{reduction == null ? '—' : `${reduction}%`}</span>
+          Reduction: <span className={reductionDisplay.className}>{reductionDisplay.label}</span>
         </span>
         <span className="text-muted">
-          Speedup: <span className="text-success font-semibold">{ratio == null ? '—' : `${ratio}x`}</span>
+          Speedup: <span className={ratioDisplay.className}>{ratioDisplay.label}</span>
         </span>
       </div>
     </div>

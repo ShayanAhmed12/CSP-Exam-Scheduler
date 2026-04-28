@@ -1,13 +1,31 @@
 import React, { useState, useEffect } from 'react'
 import { fetchDefaultData } from '../api'
 
+/*
+ * BUG 8 FIX: The original Field onChange handler used:
+ *   parseInt(e.target.value) || 0
+ * which silently converts both an empty field (NaN || 0 = 0) and a typed "0"
+ * into the same state value of 0.  This causes the backend to reject the input
+ * with "capacity must be a positive integer" but gives no in-form indication of
+ * why — the field appears to contain a value.
+ *
+ * Fix: use parseIntOrEmpty() which preserves the empty string as '' so the
+ * input field appears genuinely blank when the user clears it, making the
+ * validation error (shown via localError) self-explanatory.
+ */
+function parseIntOrEmpty(raw) {
+  if (raw === '' || raw === null || raw === undefined) return ''
+  const n = parseInt(raw, 10)
+  return Number.isNaN(n) ? '' : n
+}
+
 const Field = ({ label, value, onChange, placeholder, type = 'text' }) => (
   <div className="flex flex-col gap-1">
     <label className="text-[10px] font-mono uppercase tracking-widest text-muted/90">{label}</label>
     <input
       type={type}
       value={value}
-      onChange={e => onChange(type === 'number' ? (parseInt(e.target.value) || 0) : e.target.value)}
+      onChange={e => onChange(type === 'number' ? parseIntOrEmpty(e.target.value) : e.target.value)}
       placeholder={placeholder}
       className="bg-bg/80 border border-border/80 rounded-md px-3 py-2 text-sm font-mono text-text
                  placeholder:text-muted/40 focus:outline-none focus:border-accent/70
@@ -156,6 +174,8 @@ export default function InputPanel({ onSolve, solving }) {
       errors.push('Minimum gap must be a non-negative integer.')
     }
 
+    // BUG 8 FIX: with parseIntOrEmpty(), a cleared capacity field now becomes ''
+    // (not 0), so this check correctly catches blank fields as well as explicit 0.
     if (cleanRooms.some(r => r.capacity <= 0)) {
       errors.push('Every room must have a positive capacity.')
     }
@@ -190,6 +210,28 @@ export default function InputPanel({ onSolve, solving }) {
       min_gap: minGap,
     })
   }
+
+  /*
+   * BUG 1 FIX: Compute whether the current settings are likely to produce an
+   * INFEASIBLE result so we can warn the user before they hit Generate.
+   *
+   * Heuristic: if min_gap ≥ 1, conflicting exam pairs need slots at least
+   * (min_gap + 1) apart.  With N exams almost all conflicting, we need roughly
+   * (N / rooms) * (min_gap + 1) slots.  If the current slot count is below
+   * that estimate, show a soft warning (not a block).
+   */
+  const gapWarning = (() => {
+    if (minGap < 1) return null
+    const numSlots = slots.length
+    const numExams = exams.filter(e => e.course && e.teacher).length
+    const numRooms = rooms.filter(r => r.name).length
+    if (numRooms === 0 || numExams === 0) return null
+    const minSlotsNeeded = Math.ceil(numExams / numRooms) * (minGap + 1)
+    if (numSlots < minSlotsNeeded) {
+      return `With min gap ${minGap} and ${numExams} exams across ${numRooms} room(s), you may need at least ${minSlotsNeeded} time slots (currently ${numSlots}). The solver may return INFEASIBLE.`
+    }
+    return null
+  })()
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -251,11 +293,18 @@ export default function InputPanel({ onSolve, solving }) {
               value={minGap}
               type="number"
               onChange={v => setMinGap(Math.max(0, Number(v) || 0))}
-              placeholder="1"
+              placeholder="0"
             />
             <p className="text-xs text-muted font-mono">
               Applies between exams that share students or the same teacher.
             </p>
+            {/* BUG 1 FIX: soft warning when gap + exam count may exceed slot supply */}
+            {gapWarning && (
+              <div className="flex items-start gap-2 px-3 py-2 rounded-lg border border-try/40 bg-try/10 text-try text-xs font-mono">
+                <span className="flex-shrink-0 mt-0.5">⚠</span>
+                <span>{gapWarning}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
