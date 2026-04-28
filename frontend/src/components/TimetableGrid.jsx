@@ -16,7 +16,21 @@ const EXAM_COLORS = [
   { bg: 'rgba(64,224,208,0.15)', border: '#40e0d0', text: '#7fffd4' },
 ]
 
-export default function TimetableGrid({ solution, stats }) {
+// FIX: canonical weekday order so columns are always Mon→Tue→Wed… regardless
+// of which exam was assigned first.
+const DAY_ORDER = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+
+function sortDays(days) {
+  return days.slice().sort((a, b) => {
+    const ai = DAY_ORDER.indexOf(a)
+    const bi = DAY_ORDER.indexOf(b)
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+  })
+}
+
+// TimetableGrid now accepts an optional `comparison` prop so the performance
+// section can show real baseline data instead of the fabricated formula.
+export default function TimetableGrid({ solution, stats, comparison }) {
   if (!solution) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
@@ -30,16 +44,19 @@ export default function TimetableGrid({ solution, stats }) {
 
   const entries = Object.entries(solution) // [course, {slot, room, day, period}]
 
-  // Assign a stable color to each exam
+  // FIX: use the course name list as the memo key (stable string) instead of
+  // the solution object reference, which changes identity on every render.
+  const courseKey = entries.map(([c]) => c).join(',')
   const colorMap = useMemo(() => {
     const m = {}
     entries.forEach(([course], i) => { m[course] = EXAM_COLORS[i % EXAM_COLORS.length] })
     return m
-  }, [solution])
+  }, [courseKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Unique days and periods (maintaining insertion order)
-  const days    = [...new Set(entries.map(([, v]) => v.day))]
-  const periods = [...new Set(entries.map(([, v]) => v.period))]
+  // FIX: sort days into canonical weekday order instead of insertion order.
+  const rawDays    = [...new Set(entries.map(([, v]) => v.day))]
+  const days       = sortDays(rawDays)
+  const periods    = [...new Set(entries.map(([, v]) => v.period))]
 
   // Build lookup: day+period → assignment list
   const cellMap = {}
@@ -48,6 +65,10 @@ export default function TimetableGrid({ solution, stats }) {
     if (!cellMap[key]) cellMap[key] = []
     cellMap[key].push({ course, room: v.room })
   })
+
+  // FIX: use real comparison data instead of the fabricated arithmetic formula.
+  const plainOps     = comparison?.plain_backtracking?.operations ?? null
+  const optimizedOps = comparison?.optimized?.operations ?? null
 
   return (
     <div className="h-full flex flex-col gap-5 overflow-y-auto">
@@ -153,22 +174,23 @@ export default function TimetableGrid({ solution, stats }) {
             Algorithm Performance
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {/* Plain backtracking estimate */}
+            {/* FIX: use real baseline operations from comparison prop, not the
+                fabricated formula `assignments * 4 + backtracks * 8`. */}
             <div className="rounded-lg border border-border p-3">
               <div className="text-xs text-muted font-mono mb-1 uppercase">Plain Backtracking</div>
               <div className="text-yellow font-mono font-bold text-lg">
-                {Math.min(9999, stats.assignments * 4 + stats.backtracks * 8)}
+                {plainOps ?? '—'}
               </div>
-              <div className="text-xs text-muted font-mono">est. operations</div>
-              <div className="text-xs text-muted/60 font-mono mt-1">No heuristics, brute force</div>
+              <div className="text-xs text-muted font-mono">operations (branches + conflicts)</div>
+              <div className="text-xs text-muted/60 font-mono mt-1">No heuristics, input order</div>
             </div>
             {/* With MRV + LCV + FC */}
             <div className="rounded-lg border border-green/30 bg-green/5 p-3">
               <div className="text-xs text-green/70 font-mono mb-1 uppercase">MRV + LCV + FC ✓</div>
               <div className="text-green font-mono font-bold text-lg">
-                {stats.assignments + stats.backtracks + stats.prunes}
+                {optimizedOps ?? (stats.assignments + stats.backtracks + stats.prunes)}
               </div>
-              <div className="text-xs text-green/70 font-mono">actual operations</div>
+              <div className="text-xs text-green/70 font-mono">operations (branches + conflicts)</div>
               <div className="text-xs text-muted/60 font-mono mt-1">With all heuristics enabled</div>
             </div>
           </div>

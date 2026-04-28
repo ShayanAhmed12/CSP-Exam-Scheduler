@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
+import AlgorithmPanel from './AlgorithmPanel'
 
 /*
   LiveScheduler
@@ -30,6 +31,17 @@ const EXAM_PALETTE = [
   { bg:'#28361f', border:'#9ede6f', text:'#daf9c3', dot:'#b9ef91' },
 ]
 
+// FIX: canonical weekday order for deterministic column layout.
+const DAY_ORDER = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+
+function sortDays(days) {
+  return days.slice().sort((a, b) => {
+    const ai = DAY_ORDER.indexOf(a)
+    const bi = DAY_ORDER.indexOf(b)
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi)
+  })
+}
+
 // ── Derive live assignment state by replaying steps 0..upTo ───────────────────
 function deriveLiveState(steps, upTo) {
   const assignment = {}   // course → { slot, room, day, period }
@@ -50,6 +62,8 @@ function deriveLiveState(steps, upTo) {
       lastEvent = { kind: 'backtrack', exam: s.exam, ...s.value }
     } else if (s.kind === 'try') {
       lastEvent = { kind: 'try', exam: s.exam, ...s.value }
+    } else if (s.kind === 'prune') {
+      lastEvent = { kind: 'prune', exam: s.exam }
     } else if (s.kind === 'solution') {
       lastEvent = { kind: 'solution' }
     }
@@ -194,10 +208,10 @@ function StatsRow({ assignments, backtracks, prunes, stepNum, total }) {
 function ComparisonPanel({ comparison }) {
   if (!comparison) return null
 
-  const plain = comparison.plain_backtracking || {}
+  const plain     = comparison.plain_backtracking || {}
   const optimized = comparison.optimized || {}
   const reduction = comparison.reduction_percent
-  const ratio = comparison.improvement_ratio
+  const ratio     = comparison.improvement_ratio
 
   return (
     <div className="bg-surface border border-border rounded-xl px-4 py-3">
@@ -276,18 +290,21 @@ export default function LiveScheduler({ steps, stats, examList, comparison }) {
       if (s.kind === 'assign' && s.value) {
         const [day, ...rest] = s.value.slot.split(' ')
         const period = rest.join(' ')
-        if (!daySet.has(day))    { daySet.add(day);    dayOrder.push(day)    }
+        if (!daySet.has(day))       { daySet.add(day);       dayOrder.push(day)    }
         if (!periodSet.has(period)) { periodSet.add(period); perOrder.push(period) }
       }
     })
 
-    // Also pull from examList if provided (for grid structure before solving)
+    // FIX: sort days into canonical Mon→Tue→Wed… order instead of insertion order.
+    const sortedDays = sortDays(dayOrder)
+
+    // Build color map from examList
     const cm = {}
     ;(examList || []).forEach((e, i) => {
       cm[e.course] = EXAM_PALETTE[i % EXAM_PALETTE.length]
     })
 
-    return { days: dayOrder, periods: perOrder, colorMap: cm }
+    return { days: sortedDays, periods: perOrder, colorMap: cm }
   }, [steps, examList])
 
   // ── Build cellMap from current liveAssignment ─────────────────────────────
@@ -346,6 +363,9 @@ export default function LiveScheduler({ steps, stats, examList, comparison }) {
 
       {/* ── What's happening right now ────────────────── */}
       <ActionBanner step={currentStepData} />
+
+      {/* ── Algorithm pipeline — highlights active phase ─ */}
+      <AlgorithmPanel currentStepKind={currentStepData?.kind} />
 
       {/* ── THE LIVE TIMETABLE GRID ───────────────────── */}
       <div className="min-h-[340px] max-h-[65vh] overflow-auto rounded-xl border border-border shadow-sm bg-surface">
@@ -424,7 +444,7 @@ export default function LiveScheduler({ steps, stats, examList, comparison }) {
         />
       </div>
 
-      {/* ── Legend ────────────────────────────────────── */}
+      {/* ── Legend ────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-3">
         {[
           { color:'#2a6e4f', label:'Assigned' },

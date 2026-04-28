@@ -6,8 +6,9 @@ import React from 'react'
  * Shows the algorithm pipeline from the proposal:
  *   1. MRV variable ordering
  *   2. LCV value ordering
- *   3. Forward Checking
- *   4. Backtracking
+ *   3. Assignment
+ *   4. Forward Checking
+ *   5. Backtracking
  *
  * The `activePhase` prop (derived from current step kind) highlights
  * which phase is currently executing.
@@ -21,7 +22,9 @@ const PHASES = [
     subtitle: 'Variable Ordering',
     desc: 'Select the unassigned exam with the fewest remaining (slot, room) options. Fail fast on the hardest variables.',
     color: '#00e5ff',
-    kinds: [],   // internal — shown during 'try' before assignment
+    // FIX: MRV fires just before a value is tried — both MRV and LCV are
+    // active during the 'try' phase, so highlight together.
+    kinds: ['try'],
   },
   {
     id: 'lcv',

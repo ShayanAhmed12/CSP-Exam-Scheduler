@@ -212,6 +212,19 @@ class ORToolsExamScheduler:
         return solution
 
     def _build_steps(self, solution: dict[str, dict[str, str]] | None) -> list[dict]:
+        """
+        Build a visualization step sequence.
+
+        For each exam in assignment order:
+          1. 'try'    — show which slot/room is being attempted
+          2. 'assign' — confirm the placement, collapse its domain to 1
+          3. 'prune'  — for every conflicting unassigned exam, remove now-blocked
+                        (slot, room) pairs from its feasible set and record how
+                        many values were pruned (simulates forward checking).
+
+        This gives the UI real data to drive the Algorithm Pipeline panel and the
+        FC-prunes counter instead of always showing zero.
+        """
         if not self.record_steps:
             return []
 
@@ -224,43 +237,102 @@ class ORToolsExamScheduler:
                 )
             ]
 
-        base_domains = {
-            self.exams[ei].course: len(self.feasible_by_exam[ei]) for ei in range(len(self.exams))
+        # Map each assigned course → (slot_index, room_index).
+        course_to_sr: dict[str, tuple[int, int]] = {}
+        for course, placement in solution.items():
+            si = next(
+                i for i, s in enumerate(self.slots)
+                if s.day == placement["day"] and s.period == placement["period"]
+            )
+            ri = next(i for i, r in enumerate(self.rooms) if r.name == placement["room"])
+            course_to_sr[course] = (si, ri)
+
+        # Track remaining feasible (slot, room) sets per course — starts as a
+        # copy of the capacity-filtered domains computed at construction time.
+        remaining_feasible: dict[str, set[tuple[int, int]]] = {
+            self.exams[ei].course: set(self.feasible_by_exam[ei])
+            for ei in range(len(self.exams))
         }
 
-        # Visual order by actual solved slot index.
+        # Process exams in the order they appear in the solved timetable.
         ordered = sorted(
             solution.items(),
             key=lambda item: (
-                next(i for i, s in enumerate(self.slots) if s.day == item[1]["day"] and s.period == item[1]["period"]),
+                next(
+                    i for i, s in enumerate(self.slots)
+                    if s.day == item[1]["day"] and s.period == item[1]["period"]
+                ),
                 item[0],
             ),
         )
 
         steps: list[dict] = []
-        remaining_domains = dict(base_domains)
 
         for course, placement in ordered:
+            si, ri = course_to_sr[course]
             value = {"slot": placement["slot"], "room": placement["room"]}
+
+            # ── TRY ──────────────────────────────────────────────────────────
+            domain_snapshot = {c: len(fs) for c, fs in remaining_feasible.items()}
             steps.append(
                 _step(
                     "try",
                     course,
                     value=value,
-                    detail=f"Trying {course} -> {placement['slot']} in {placement['room']}",
-                    domains=remaining_domains,
+                    detail=f"Trying {course} → {placement['slot']} in {placement['room']}",
+                    domains=domain_snapshot,
                 )
             )
+
+            # ── ASSIGN — collapse this exam's domain to the chosen value ─────
+            remaining_feasible[course] = {(si, ri)}
+            domain_snapshot = {c: len(fs) for c, fs in remaining_feasible.items()}
             steps.append(
                 _step(
                     "assign",
                     course,
                     value=value,
-                    detail=f"Assigned {course} -> {placement['slot']} / {placement['room']}",
-                    domains=remaining_domains,
+                    detail=f"Assigned {course} → {placement['slot']} / {placement['room']}",
+                    domains=domain_snapshot,
                 )
             )
-            remaining_domains[course] = 1
+
+            # ── PRUNE — forward checking for every conflicting exam ───────────
+            # Remove any (slot, room) pair whose slot falls within min_gap of the
+            # just-assigned slot from the domains of conflicting unassigned exams.
+            exam_obj = self.course_to_exam[course]
+            for other_course, other_feasible in remaining_feasible.items():
+                if other_course == course or len(other_feasible) <= 1:
+                    continue  # already assigned or no pruning possible
+                other_exam = self.course_to_exam[other_course]
+                if not _has_conflict(exam_obj, other_exam):
+                    continue
+
+                blocked = {
+                    (s2, r2)
+                    for (s2, r2) in other_feasible
+                    if abs(s2 - si) <= self.min_gap
+                }
+                if not blocked:
+                    continue
+
+                before = len(other_feasible)
+                remaining_feasible[other_course] -= blocked
+                pruned = before - len(remaining_feasible[other_course])
+
+                if pruned > 0:
+                    domain_snapshot = {c: len(fs) for c, fs in remaining_feasible.items()}
+                    steps.append(
+                        _step(
+                            "prune",
+                            other_course,
+                            detail=(
+                                f"FC: removed {pruned} option(s) from '{other_course}' "
+                                f"(conflicts with '{course}')"
+                            ),
+                            domains=domain_snapshot,
+                        )
+                    )
 
         steps.append(_step("solution", "", detail="Valid timetable found."))
         return steps
@@ -311,13 +383,17 @@ class ORToolsExamScheduler:
 
         steps = self._build_steps(solution)
 
+        # FIX: count actual prune steps produced by _build_steps instead of
+        # aliasing NumBranches() (which made prunes == tries == branches).
+        prune_count = sum(1 for s in steps if s.get("kind") == "prune")
+
         stats = {
-            "tries": int(solver.NumBranches()),
-            "assignments": len(solution) if solution else 0,
-            "backtracks": int(solver.NumConflicts()),
-            "prunes": int(solver.NumBranches()),
-            "branches": int(solver.NumBranches()),
-            "conflicts": int(solver.NumConflicts()),
+            "tries":        int(solver.NumBranches()),
+            "assignments":  len(solution) if solution else 0,
+            "backtracks":   int(solver.NumConflicts()),
+            "prunes":       prune_count,                        # FIX
+            "branches":     int(solver.NumBranches()),
+            "conflicts":    int(solver.NumConflicts()),
             "wall_time_ms": round(float(solver.WallTime()) * 1000, 2),
         }
 
@@ -336,7 +412,7 @@ def _validate_input(data: dict) -> list[str]:
     exams_raw = data.get("exams")
     rooms_raw = data.get("rooms")
     slots_raw = data.get("time_slots")
-    min_gap = data.get("min_gap", 1)
+    min_gap   = data.get("min_gap", 1)
 
     if not isinstance(exams_raw, list) or len(exams_raw) == 0:
         errors.append("Provide at least one exam entry.")
@@ -345,7 +421,12 @@ def _validate_input(data: dict) -> list[str]:
     if not isinstance(slots_raw, list) or len(slots_raw) == 0:
         errors.append("Provide at least one time slot entry.")
 
-    if not isinstance(min_gap, int) or min_gap < 0:
+    # FIX: accept numeric floats that are whole numbers (e.g. JSON sends 1.0).
+    try:
+        min_gap_f = float(min_gap)
+        if min_gap_f < 0 or min_gap_f != int(min_gap_f):
+            errors.append("min_gap must be a non-negative integer.")
+    except (TypeError, ValueError):
         errors.append("min_gap must be a non-negative integer.")
 
     seen_courses = set()
@@ -357,8 +438,8 @@ def _validate_input(data: dict) -> list[str]:
                 errors.append(f"Exam #{idx} must be an object.")
                 continue
 
-            course = str(exam.get("course", "")).strip()
-            teacher = str(exam.get("teacher", "")).strip()
+            course   = str(exam.get("course", "")).strip()
+            teacher  = str(exam.get("teacher", "")).strip()
             students = exam.get("students", [])
 
             if not course:
@@ -387,7 +468,7 @@ def _validate_input(data: dict) -> list[str]:
                 errors.append(f"Room #{idx} must be an object.")
                 continue
 
-            name = str(room.get("name", "")).strip()
+            name        = str(room.get("name", "")).strip()
             capacity_raw = room.get("capacity", 0)
             try:
                 capacity = int(capacity_raw)
@@ -415,7 +496,7 @@ def _validate_input(data: dict) -> list[str]:
                 errors.append(f"Time slot #{idx} must be an object.")
                 continue
 
-            day = str(slot.get("day", "")).strip()
+            day    = str(slot.get("day",    "")).strip()
             period = str(slot.get("period", "")).strip()
 
             if not day or not period:
@@ -436,25 +517,28 @@ def _validate_input(data: dict) -> list[str]:
 
 def _build_comparison(optimized: dict, baseline: dict) -> dict:
     optimized_ops = _operation_count(optimized.get("stats", {}))
-    baseline_ops = _operation_count(baseline.get("stats", {}))
+    baseline_ops  = _operation_count(baseline.get("stats", {}))
 
-    reduction_percent = None
-    improvement_ratio = None
+    reduction_percent  = None
+    improvement_ratio  = None
     if baseline_ops > 0 and optimized_ops > 0:
         reduction_percent = round((1 - (optimized_ops / baseline_ops)) * 100, 2)
         improvement_ratio = round(baseline_ops / optimized_ops, 2)
 
     return {
         "optimized": {
-            "status": "solved" if optimized.get("solution") else optimized.get("status", "UNKNOWN").lower(),
+            "status":     "solved" if optimized.get("solution") else optimized.get("status", "UNKNOWN").lower(),
             "operations": optimized_ops,
-            "stats": optimized.get("stats", {}),
+            "stats":      optimized.get("stats", {}),
         },
         "plain_backtracking": {
-            "status": "cutoff" if baseline.get("cutoff") else ("solved" if baseline.get("solution") else baseline.get("status", "UNKNOWN").lower()),
+            "status":     "cutoff" if baseline.get("cutoff") else (
+                              "solved" if baseline.get("solution")
+                              else baseline.get("status", "UNKNOWN").lower()
+                          ),
             "operations": baseline_ops,
-            "stats": baseline.get("stats", {}),
-            "cutoff": bool(baseline.get("cutoff", False)),
+            "stats":      baseline.get("stats", {}),
+            "cutoff":     bool(baseline.get("cutoff", False)),
         },
         "reduction_percent": reduction_percent,
         "improvement_ratio": improvement_ratio,
@@ -491,7 +575,7 @@ def build_and_solve(data: dict) -> dict:
         for i, slot in enumerate(data["time_slots"])
     ]
 
-    min_gap = int(data.get("min_gap", 1))
+    min_gap = int(float(data.get("min_gap", 1)))
 
     optimized = ORToolsExamScheduler(
         exams=exams,

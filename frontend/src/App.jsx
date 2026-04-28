@@ -1,16 +1,17 @@
 import React, { useState } from 'react'
 import InputPanel    from './components/InputPanel'
 import LiveScheduler from './components/LiveScheduler'
+import ExportButton  from './components/ExportButton'   // FIX: wire up orphaned component
 import { solveSchedule } from './api'
 
 export default function App() {
-  const [steps,    setSteps]    = useState([])
-  const [solution, setSolution] = useState(null)
-  const [stats,    setStats]    = useState(null)
+  const [steps,      setSteps]      = useState([])
+  const [solution,   setSolution]   = useState(null)
+  const [stats,      setStats]      = useState(null)
   const [comparison, setComparison] = useState(null)
-  const [solving,  setSolving]  = useState(false)
-  const [error,    setError]    = useState(null)
-  const [examList, setExamList] = useState([])
+  const [solving,    setSolving]    = useState(false)
+  const [error,      setError]      = useState(null)
+  const [examList,   setExamList]   = useState([])
 
   const handleSolve = async (payload) => {
     setSolving(true)
@@ -23,9 +24,9 @@ export default function App() {
 
     try {
       const result = await solveSchedule(payload)
-      setSteps(result.steps    || [])
+      setSteps(result.steps      || [])
       setSolution(result.solution || null)
-      setStats(result.stats    || null)
+      setStats(result.stats      || null)
       setComparison(result.comparison || null)
     } catch (err) {
       setError(err?.response?.data?.error || err.message || 'Unknown error')
@@ -73,14 +74,8 @@ export default function App() {
                     Ready
                   </span>
                 )}
-                {solution && (
-                  <button
-                    onClick={() => window.print()}
-                    className="no-print text-xs font-mono px-3 py-1.5 rounded-lg border border-border text-muted hover:border-accent/70 hover:text-accent transition-all"
-                  >
-                    ⎙ Print / PDF
-                  </button>
-                )}
+                {/* FIX: use the ExportButton component instead of an inline button */}
+                <ExportButton disabled={!solution || solving} />
               </div>
             </div>
           </header>
